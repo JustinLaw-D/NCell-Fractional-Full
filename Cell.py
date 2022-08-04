@@ -12,12 +12,16 @@ Re = 6371 # radius of Earth (km)
 
 class Cell:
     
-    def __init__(self, S_i, R_i, N_i, logL_edges, chi_edges, event_list, alt, dh, tau_N, v=None):
+    def __init__(self, S_i, S_di, D_i, R_i, N_i, logL_edges, chi_edges, event_list, alt, dh, tau_N, v, m_sat, sigma_sat,
+                 del_t, fail_t, tau_do, target_alt, up_time, alpha_S, alpha_D, alpha_N, alpha_R, P, AM_sat, tau_sat, C_sat, 
+                 expl_rate_L, expl_rate_D, m_rb, sigma_rb, lam_rb, AM_rb, tau_rb, C_rb, expl_rate_R):
         '''Constructor for Cell class
     
         Parameter(s):
-        S_i : list of satellite types with initial values
-        R_i : list of rocket body types with initial values
+        S_i : list of initial live satellite values for each satellite type
+        S_di : list of initial de-orbiting satellite values for each satellite type
+        D_i : list of initial derelict satellite values for each satellite type
+        R_i : list of initial number of rocket bodies of each type
         N_i : initial array of number of debris by L and A/M
         logL_edges : bin edges in log10 of characteristic length (log10(m))
         chi_edges : bin edges in log10(A/M) (log10(m^2/kg))
@@ -25,29 +29,79 @@ class Cell:
         alt : altitude of the shell centre (km)
         dh : width of the shell (km)
         tau_N : array of atmospheric drag lifetimes for debris (yr)
-
-        Keyword Parameter(s):
-        v : relative collision speed (km/s, default 10km/s)
+        v : relative collision speed (km/s)
+        m_sat : mass of each satellite type (kg)
+        sigma_sat : collision cross-section of each satellite type (m^2)
+        del_t : mean satellite lifetime of each type (yr)
+        fail_t : ascending satellite failure lifetime (yr)
+        tau_do : mean time for satellites of each type to de-orbit from shell (yr)
+        target_alt : target final altitude for each satellite type (km)
+        up_time : amount of time it takes a satellite of each type to ascend through the band (yr)
+        alpha_S : the fraction of collisions a live satellite of each type fails to avoid with a live satellite
+        alpha_D : the fraction of collisions a live satellite of each type fails to avoid with a derelict satellite
+        alpha_N : the fraction of collisions a live satellite of each type fails to avoid with trackable debris
+        alpha_R : the fraction of collisions a live satellite of each type fails to avoid with a rocket
+        P : post-mission disposal probability for satellites of each type
+        AM_sat : area-to-mass ratio for satellites of each type (m^2/kg)
+        tau_sat : atmospheric drag lifetime of each satellite type (yr)
+        C_sat : fit constant for explosions for each satellite type
+        expl_rate_L : number of explosions that occur in a 1yr period with a population 
+                      of 100 live satellites, for each satellite type
+        expl_rate_D : number of explosions that occur in a 1yr period with a population 
+                      of 100 derelict satellites, for each satellite type
+        m_rb : mass of each rocket body type (kg)
+        sigma_rb : collision cross-section of each rocket body type (m^2)
+        lam_rb : launch rate of each rocket body type into the shell (1/yr)
+        AM_rb : area-to-mass ratio of each rocket body type (m^2/kg)
+        tau_rb : atmospheric drag lifetime of each rocket body type (yr)
+        C_rb : fit constant for explosions of each rocket body type
+        expl_rate_R : number of explosions that occur in a 1yr period with a population 
+                      of 100 rocket bodies, for each type
 
         Output(s):
         Cell instance
         '''
 
-        # set default values as needed
-        if v == None:
-            v = 10
+        # setup initial values for tracking satallites TODO
+        self.num_sat_types = len(S_i)
+        self.num_rb_types = len(R_i)
+        self.S = [S_i]
+        self.S_d = [S_di]
+        self.D = [D_i]
+        self.m_sat = m_sat
+        self.sigma_sat = sigma_sat
+        self.del_t = del_t
+        self.fail_t = fail_t
+        self.tau_do = tau_do
+        self.target_alt = target_alt
+        self.up_time = up_time
+        self.alpha_S = alpha_S
+        self.alpha_D = alpha_D
+        self.alpha_R = alpha_R
+        self.alpha_N = alpha_N
+        self.P = P
+        self.AM_sat = AM_sat
+        self.tau_sat = tau_sat
+        self.C_sat = C_sat
+        self.expl_rate_L = expl_rate_L
+        self.expl_rate_D = expl_rate_D
 
-        # setup initial values for tracking live satallites, derelict satallites,
-        # lethat debris, and non-lethal debris over time
-        self.satellites = S_i
-        self.rockets = R_i
-        self.num_sat_types = len(self.satellites)
-        self.num_rb_types = len(self.rockets)
+        # setup initial values for tracking rockets
+        self.R = [R_i]
+        self.m_rb = m_rb
+        self.sigma_rb = sigma_rb
+        self.lam_rb = lam_rb
+        self.AM_rb = AM_rb
+        self.tau_rb = tau_rb
+        self.C_rb = C_rb
+        self.expl_rate_R = expl_rate_R
+
+        # setup initial debris values
         self.N_bins = [N_i]
 
         # setup other variables
-        self.C_l = [0] # lethal collisions
-        self.C_nl = [0] # non-lethal collisions
+        self.C_c = [0] # catastrophic collisions
+        self.C_nc = [0] # non-catastrophic collisions
         self.event_list = event_list
         self.alt = alt
         self.dh = dh
@@ -55,35 +109,36 @@ class Cell:
         self.v = v
         self.v_orbit = np.sqrt(G*Me/((Re + alt)*1000))/1000 # orbital velocity in km/s
         self.logL_edges = logL_edges
+        self.num_L = len(logL_edges) - 1
+        self.logL_ave = np.zeros(self.num_L) # average logL value in each bin
+        for i in range(self.num_L):
+            self.logL_ave[i] = (logL_edges[i]+logL_edges[i+1])/2
+        self.L_ave = 10**self.logL_ave
         self.chi_edges = chi_edges
-        self.num_L = self.N_bins[0].shape[0]
-        self.num_chi = self.N_bins[0].shape[1]
-        self.trackable = np.full((self.num_L, self.num_chi), True) # which bins are trackable
+        self.num_chi = len(chi_edges) - 1
+        self.chi_ave = np.zeros(self.num_chi) # average chi value in each bin
+        for i in range(self.num_chi):
+            self.chi_ave[i] = (chi_edges[i]+chi_edges[i+1])/2
+        self.AM_ave = 10**self.chi_ave
+        self.trackable = np.full(self.num_L, True) # which bins are trackable
         for i in range(self.num_L):
             ave_L = 10**((self.logL_edges[i] + self.logL_edges[i+1])/2) # average L value for these bins
-            if ave_L < 1/10 : self.trackable[i, :] = False
-        self.lethal_sat_N = []
-        self.lethal_rb_N = []
-        for i in range(self.num_sat_types):
-            self.lethal_sat_N.append(np.full(self.N_bins[0].shape, False)) # whether or not each bin has lethal collisions
-        for i in range(self.num_rb_types):
-            self.lethal_rb_N.append(np.full(self.N_bins[0].shape, False)) 
-        self.update_lethal_N()
+            if ave_L < 1/10 : self.trackable[i] = False
+        self.cat_sat_N = np.full((self.num_sat_types, self.num_L, self.num_chi), False) # tracks which collisions are catastrophic
+        self.cat_rb_N = np.full((self.num_rb_types, self.num_L, self.num_chi), False)
+        self.update_cat_N()
         self.ascending = np.full(self.num_sat_types, False) # list of which satellite types are ascending
         for i in range(self.num_sat_types):
-            sat = self.satellites[i]
-            if sat.target_alt > self.alt + self.dh/2 : self.ascending[i] = True
+            if self.target_alt[i] > self.alt + self.dh/2 : self.ascending[i] = True
 
-    def save(self, filepath, filter, compress=True):
-        '''
+    def save(self, filepath, filter, filter_len):
+        ''' TODO
         saves the current Cell object to .csv and .npz files
 
         Input(s):
         filepath : explicit path to folder that the files will be saved in (string)
         filter : array of which data points to keep or skip (array of booleans)
-
-        Keyword Input(s):
-        compress : whether or not to save the data in a compressed format (default True)
+        filter_len : number of Trues in the filter
 
         Output(s): None
 
@@ -99,11 +154,10 @@ class Cell:
         csv_file.close()
 
         # write easy arrays
-        Cl_array, Cnl_array = np.array(self.C_l)[filter], np.array(self.C_nl)[filter]
-        to_save = {'C_l' : Cl_array, 'C_nl' : Cnl_array, 'tau_N' : self.tau_N, 'trackable' : self.trackable,
+        Cc_array, Cnc_array = np.array(self.C_c)[filter], np.array(self.C_nc)[filter]
+        to_save = {'C_c' : Cc_array, 'C_nc' : Cnc_array, 'tau_N' : self.tau_N, 'trackable' : self.trackable,
                    'ascending' : self.ascending, 'logL' : self.logL_edges, 'chi' : self.chi_edges}
-        if compress : np.savez_compressed(filepath + "data.npz", **to_save)
-        else : np.savez(filepath + "data.npz", **to_save)
+        np.savez_compressed(filepath + "data.npz", **to_save)
 
         # write N_bins values
         N_dict = dict()
@@ -112,30 +166,90 @@ class Cell:
             if filter[i]:
                 N_dict[str(index)] = self.N_bins[i]
                 index += 1
-        if compress : np.savez_compressed(filepath + "N_bins.npz", **N_dict)
-        else : np.savez(filepath + "N_bins.npz", **N_dict)
+        np.savez_compressed(filepath + "N_bins.npz", **N_dict)
 
-        # write lethal table values
-        lethal_dict = dict()
-        for i in range(self.num_sat_types):
-            lethal_dict["sat" + str(i)] = self.lethal_sat_N[i]
-        for i in range(self.num_rb_types):
-            lethal_dict["rb" + str(i)] = self.lethal_rb_N[i]
-        if compress : np.savez_compressed(filepath + "lethal_tables.npz", **lethal_dict)
-        else : np.savez(filepath + "lethal_tables.npz", **lethal_dict)
+        # write cat table values
+        cat_dict = {'sat' : self.cat_sat_N, 'rb' : self.cat_rb_N}
+        np.savez_compressed(filepath + "cat_tables.npz", **cat_dict)
 
         # write satellites and rockets
         for i in range(self.num_sat_types):
             sat_path = filepath + 'Satellite' + str(i) + '/'
             os.mkdir(sat_path)
-            self.satellites[i].save(sat_path, filter, compress=compress)
+            self.save_sat(sat_path, filter, filter_len, i)
         for i in range(self.num_rb_types):
             rb_path = filepath + 'RocketBody' + str(i) + '/'
             os.mkdir(rb_path)
-            self.rockets[i].save(rb_path, filter, compress=compress)
+            self.rockets[i].save(rb_path, filter)
+
+    def save_sat(self, filepath, filter, filter_len, i):
+        '''
+        saves the current satellite information to .csv and .npz files
+
+        Input(s):
+        filepath : explicit path to folder that the files will be saved in (string)
+        filter : array of which data points to keep or skip (array of booleans)
+        filter_len : number of Trues in the filter
+        i : satellite type number
+
+        Output(s): None
+        '''
+
+        # save parameters
+        csv_file = open(filepath + 'params.csv', 'w', newline='')
+        csv_writer = csv.writer(csv_file, dialect='unix')
+        csv_writer.writerow([self.m_sat[i], self.sigma_sat[i], self.del_t[i], self.fail_t[i], self.tau_do[i], 
+                             self.target_alt[i], self.up_time[i], self.alphaS[i], self.alphaD[i], self.alphaN[i], 
+                             self.alphaR[i], self.P[i], self.AM_sat[i], self.tau_sat[i], self.C_sat[i], 
+                             self.expl_rate_L[i], self.expl_rate_D[i]])
+        csv_file.close()
+
+        # save data
+        S_array = np.empty(filter_len, dtype=np.double)
+        Sd_array = np.empty(filter_len, dtype=np.double)
+        D_array = np.empty(filter_len, dtype=np.double)
+        index = 0
+        for j in range(len(self.S)):
+            if filter[j]:
+                S_array[index] = self.S[j][i]
+                Sd_array[index] = self.S_d[j][i]
+                D_array[index] = self.D[j][i]
+                index += 1
+        to_save = {'S' : S_array, 'S_d' : Sd_array, 'D' : D_array}
+        np.savez_compressed(filepath + "data.npz", **to_save)
+    
+    def save_rb(self, filepath, filter, filter_len, i):
+        '''
+        saves the current rocket body information to .csv and .npz files
+
+        Input(s):
+        filepath : explicit path to folder that the files will be saved in (string)
+        filter : array of which data points to keep or skip (array of booleans)
+        filter_len : number of Trues in the filter
+        i : rocket body type number
+
+        Output(s): None
+        '''
+
+        # save parameters
+        csv_file = open(filepath + 'params.csv', 'w', newline='')
+        csv_writer = csv.writer(csv_file, dialect='unix')
+        csv_writer.writerow([self.m_rb[i], self.sigma_rb[i], self.lam_rb[i], self.AM_rb[i], self.tau_rb[i],
+                             self.C_rb[i], self.expl_rate_R[i]])
+        csv_file.close()
+
+        # save data
+        R_array = np.empty(filter_len, dtype=np.double)
+        index = 0
+        for j in range(len(self.R)):
+            if filter[j]:
+                R_array[index] = self.R[j][i]
+                index += 1
+        to_save = {'R' : R_array}
+        np.savez_compressed(filepath + "data.npz", **to_save)
 
     def load(filepath):
-        '''
+        ''' TODO
         builds a Cell object from saved data
 
         Input(s):
@@ -167,8 +281,8 @@ class Cell:
 
         # load basic arrays
         array_dict = np.load(filepath + "data.npz")
-        cell.C_l = array_dict['C_l'].tolist()
-        cell.C_nl = array_dict['C_nl'].tolist()
+        cell.C_c = array_dict['C_c'].tolist()
+        cell.C_nc = array_dict['C_nc'].tolist()
         cell.tau_N = array_dict['tau_N']
         cell.trackable = array_dict['trackable']
         cell.ascending = array_dict['ascending']
@@ -188,17 +302,12 @@ class Cell:
             i += 1
         
         # load lethal table values
-        lethal_dict = np.load(filepath + "lethal_tables.npz")
-        cell.lethal_sat_N = []
-        cell.lethal_rb_N = []
-        for i in range(cell.num_sat_types):
-            cell.lethal_sat_N.append(lethal_dict["sat" + str(i)])
-        for i in range(cell.num_rb_types):
-            cell.lethal_rb_N.append(lethal_dict["rb" + str(i)])
+        cat_dict = np.load(filepath + "cat_tables.npz")
+        cell.cat_sat_N = cat_dict['sat']
+        cell.cat_rb_N = cat_dict['rb']
 
-        # load satellites and rockets
-        cell.satellites = []
-        cell.rockets = []
+        # setup variables for satellites TODO
+
         for i in range(cell.num_sat_types):
             sat_path = filepath + 'Satellite' + str(i) + '/'
             cell.satellites.append(Satellite.load(sat_path))
@@ -210,7 +319,7 @@ class Cell:
         return cell
 
     def dxdt_cell(self, time):
-        '''
+        ''' TODO
         calculates the rate of collisions and decays from each debris bin, the rate
         of decaying/de-orbiting satellites, the rate of launches/deorbit starts of satallites, 
         and the rate of creation of derelicts at the given time, due only to events in the cell
@@ -396,7 +505,7 @@ class Cell:
         return dSdt_tot, dS_ddt_tot, dDdt_tot, dRdt_tot, ascend_S, deorbit_S, decay_D, decay_R, decay_N, D_dt, RD_dt, R_dt, CS_dt, CR_dt, expl_S_tot, expl_R
 
     def N_sat_events(self, S, S_d, D, N, sigma, alpha):
-        '''
+        ''' TODO
         calculates the rate of collisions between debris and stallites of a particular type in a band
 
         Parameter(s):
@@ -426,7 +535,7 @@ class Cell:
         return dSdt, dS_ddt, dDdt
 
     def N_rb_events(self, R, N, sigma):
-        '''
+        ''' TODO
         calculates the rate of collisions between debris and rocket bodies of a particular type in a band
 
         Parameter(s):
@@ -447,7 +556,7 @@ class Cell:
         return n*sigma*v*R
 
     def SColl_events(self, S1, S_d1, D1, sigma1, alphaS1, alphaD1, S2, S_d2, D2, sigma2, alphaS2):
-        '''
+        ''' TODO
         calculates the rate of collisions between satellites of two particular types
         in a band
 
@@ -491,7 +600,7 @@ class Cell:
         return dSSdt, dSS_ddt, dSDdt, dS_dS_ddt, dS_dDdt, dDDdt
 
     def SRColl_events(self, S1, S_d1, D1, sigma1, alpha1, R, sigma2):
-        '''
+        ''' TODO
         calculates the rate of collisions between satellites and rocket bodies of two particular types
         in a band
 
@@ -526,7 +635,7 @@ class Cell:
         return dSRdt, dS_dRdt, dDRdt
 
     def RColl_events(self, R1, sigma1, R2, sigma2):
-        '''
+        ''' TODO
         calculates the rate of collisions between rocket bodies of two types in a band
 
         Parameter(s):
@@ -549,9 +658,9 @@ class Cell:
         n = R2/V # number density of the rockets of the second type
         return n*sigma*v*R1
 
-    def update_lethal_N(self):
+    def update_cat_N(self):
         '''
-        updates values in lethal_N based on current mass, v, and bins
+        updates values in cat_N based on current mass, v, and bins
 
         Parameter(s): None
 
@@ -560,11 +669,11 @@ class Cell:
         Ouput(s): None
         '''
 
-        for i in range(self.num_L):
-            ave_L = 10**((self.logL_edges[i] + self.logL_edges[i+1])/2) # average L value for these bins
-            for j in range(self.num_chi):
-                ave_chi = (self.chi_edges[j] + self.chi_edges[j+1])/2
-                for k in range(self.num_sat_types):
-                    self.lethal_sat_N[k][i,j] = is_catastrophic(self.satellites[k].m, ave_L, 10**ave_chi, self.v)
-                for k in range(self.num_rb_types):
-                    self.lethal_rb_N[k][i,j] = is_catastrophic(self.rockets[k].m, ave_L, 10**ave_chi, self.v)
+        for i in range(self.num_sat_types):
+            for j in range(self.num_L):
+                for k in range(self.num_chi):
+                    self.cat_sat_N[i,j,k] = is_catastrophic(self.m_sat[i], self.L_ave[j], self.AM_ave[k], self.v)
+        for i in range(self.num_rb_types):
+            for j in range(self.num_L):
+                for k in range(self.num_chi):
+                    self.cat_rb_N[i,j,k] = is_catastrophic(self.m_rb[i], self.L_ave[j], self.AM_ave[k], self.v)
