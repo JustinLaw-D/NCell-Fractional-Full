@@ -12,7 +12,7 @@ V = 4*np.pi*50*(R+600)**2 # volume of band
 S_i = [0]
 S_di = [0]
 D_i = [0]
-N_i = int(2.5e-8*V)
+N_i = 2.5e-8*V
 lam = 1000
 T = 50
 def drag_lifetime_loc(hmax, hmin, a_over_m, t):
