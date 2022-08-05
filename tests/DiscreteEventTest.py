@@ -4,7 +4,7 @@ import sys
 sys.path.append('./../')
 
 from NCell import NCell
-from ObjectsEvents import Event, ExplEvent
+from Events import Event, ExplEvent
 from AtmosphericDecayModels import drag_lifetime, need_update
 import numpy as np
 

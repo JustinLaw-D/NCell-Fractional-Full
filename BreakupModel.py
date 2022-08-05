@@ -60,20 +60,29 @@ def calc_M(m_s, m_d, v):
     calculates the M factor used for L distribution calculation
     
     Parameter(s):
-    m_s : satellite mass (kg)
-    m_d : mass of the debris (kg)
+    m_s : satellite mass (array, kg)
+    m_d : mass of the debris (array or 2d array, kg)
     v : collision velocity (km/s)
 
     Keyword parameter(s): None
 
     Output(s):
-    M : value of M parameter (variable units)
+    M : value of M parameter for each combination (variable units)
     '''
 
-    E_p = (0.5*m_d*((v*1000)**2)/m_s)/1000 # E_p in J/g
+    ms_size = m_s.size
+    if (len(m_d.shape) == 1):
+        m_s = np.resize(m_s, (m_d.size, ms_size)).transpose()
+        m_d = np.resize(m_d, (ms_size, m_d.size))
+    elif (len(m_d.shape) == 2):
+        m_s = np.moveaxis(np.resize(m_s, (m_d.shape[1], m_d.shape[0], ms_size)), 2, 0)
+        m_d = np.resize(m_d, (ms_size, m_d.shape[0], m_d.shape[1]))
 
-    if E_p >= 40 : return m_s + m_d # catestrophic collision
-    else : return m_d*v # non-catestrophic collision
+    E_p = (0.5*m_d*((v*1000)**2)/m_s)/1000 # E_p in J/g
+    M = np.empty(E_p.shape)
+    M[E_p >= 40] = m_s[E_p >= 40] + m_d[E_p >= 40] # catestrophic collision
+    M[E_p < 40] = m_d[E_p < 40]*v # non-catestrophic collision
+    return M
 
 def calc_Ntot(M, Lmin, Lmax, typ, C=1):
     '''
@@ -92,7 +101,7 @@ def calc_Ntot(M, Lmin, Lmax, typ, C=1):
     Output(s):
     N : total number of fragments of Lmax > size > Lmin
 
-    Note(s): returns 0 on an invalid type
+    Note(s): returns 0 on an invalid type, M, C can be an arrays of any dimension
     '''
 
     if typ == 'coll' : return 0.1*(M**0.75)*(Lmin**(-1.71)) - 0.1*(M**0.75)*(Lmax**(-1.71))
