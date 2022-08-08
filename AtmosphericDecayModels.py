@@ -53,7 +53,7 @@ def density(alt,t,mo0,setF107):
     Parameter(s):
     alt : altitude (km)
     t : time since arbitrary start point (yr)
-    m0 : starting month in the solar cycle (int)
+    m0 : starting month in the solar cycle
     setF107 : if not None, value taken for solar flux regardless of current time (None or 10^(-22)W/m^2)
 
     Output(s):
@@ -149,13 +149,13 @@ def drag_lifetime(alt_i, alt_f, a_over_m, CD, dt, m0, mindt, maxdt, dtfactor, tm
         ave_dadt = (dadt0 + dadt1)/2
         alt += ave_dadt*dt
         time += dt
-        dt = np.amin(-(alt/ave_dadt)*dtfactor)
+        dt = -(alt/ave_dadt)*dtfactor
         if dt < mindt:
             print('WARNING: Problem is possibly too stiff for integrator.')
             dt = mindt
         elif maxdt != None:
             dt = min(dt, maxdt)
         if tmax is not None: # give up?
-            if time > tmax : return np.full(a_over_m.shape, np.inf)
+            if time > tmax : return np.inf
 
     return time

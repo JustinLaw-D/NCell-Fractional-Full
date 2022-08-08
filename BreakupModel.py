@@ -32,12 +32,12 @@ def rand_poisson(ave, mx=np.inf):
         num = poisson.rvs(abs(ave))
     return num*sign_fac
 
-def is_catastrophic(m_s, L, AM, v):
+def is_catastrophic(m_t, L, AM, v):
     '''
-    determines if a collision between debris and a satallite is catastrophic
+    determines if a collision between debris and a target is catastrophic
 
     Parameter(s):
-    m_s : mass of the satallite (kg)
+    m_t : mass of the target (kg)
     L : characteristic length of the debris (m)
     AM : area to mass ratio of the debris (m^2/kg)
     v : relative velocity of the objects (km/s)
@@ -51,16 +51,16 @@ def is_catastrophic(m_s, L, AM, v):
     v *= 1000 # convert to m/s
     m_d = find_A(L)/AM # mass of the debris (on average)
     k_d = 0.5*m_d*(v**2) # relative kinetic energy of the debris
-    dec_fact = (k_d/m_s)/1000 # factor for making the decision (J/g)
+    dec_fact = (k_d/m_t)/1000 # factor for making the decision (J/g)
     if dec_fact >= 40 : return True
     else : return False
 
-def calc_M(m_s, m_d, v):
+def calc_M(m_t, m_d, v):
     '''
     calculates the M factor used for L distribution calculation
     
     Parameter(s):
-    m_s : satellite mass (array, kg)
+    m_t : target mass (array, kg)
     m_d : mass of the debris (array or 2d array, kg)
     v : collision velocity (km/s)
 
@@ -68,19 +68,21 @@ def calc_M(m_s, m_d, v):
 
     Output(s):
     M : value of M parameter for each combination (variable units)
+
+    Note(s): output dimension order is (m_t dim, m_d dim)
     '''
 
-    ms_size = m_s.size
+    mt_size = m_t.size
     if (len(m_d.shape) == 1):
-        m_s = np.resize(m_s, (m_d.size, ms_size)).transpose()
-        m_d = np.resize(m_d, (ms_size, m_d.size))
+        m_t = np.resize(m_t, (m_d.size, mt_size)).transpose()
+        m_d = np.resize(m_d, (mt_size, m_d.size))
     elif (len(m_d.shape) == 2):
-        m_s = np.moveaxis(np.resize(m_s, (m_d.shape[1], m_d.shape[0], ms_size)), 2, 0)
-        m_d = np.resize(m_d, (ms_size, m_d.shape[0], m_d.shape[1]))
+        m_t = np.moveaxis(np.resize(m_t, (m_d.shape[1], m_d.shape[0], mt_size)), 2, 0)
+        m_d = np.resize(m_d, (mt_size, m_d.shape[0], m_d.shape[1]))
 
-    E_p = (0.5*m_d*((v*1000)**2)/m_s)/1000 # E_p in J/g
+    E_p = (0.5*m_d*((v*1000)**2)/m_t)/1000 # E_p in J/g
     M = np.empty(E_p.shape)
-    M[E_p >= 40] = m_s[E_p >= 40] + m_d[E_p >= 40] # catestrophic collision
+    M[E_p >= 40] = m_t[E_p >= 40] + m_d[E_p >= 40] # catestrophic collision
     M[E_p < 40] = m_d[E_p < 40]*v # non-catestrophic collision
     return M
 
@@ -104,7 +106,7 @@ def calc_Ntot(M, Lmin, Lmax, typ, C=1):
     Note(s): returns 0 on an invalid type, M, C can be an arrays of any dimension
     '''
 
-    if typ == 'coll' : return 0.1*(M**0.75)*(Lmin**(-1.71)) - 0.1*(M**0.75)*(Lmax**(-1.71))
+    if typ == 'coll' : return 0.1*(M**0.75)*((Lmin**(-1.71)) - (Lmax**(-1.71)))
     elif typ == 'expl' : return 6*C*(Lmin**(-1.6) - Lmax**(-1.6))
     else:
         print('WARNING: Invalid Debris Generation Type')
@@ -152,34 +154,6 @@ def L_cdf(L, L_min, L_max, typ):
         print('WARNING: Invalid Debris Generation Type')
         return 0
     return (L_min**beta - L**beta)/(L_min**beta - L_max**beta)
-
-def randL(num, L_min, L_max, typ):
-    '''
-    generates num random characteristic lengths for debris from a collision/explosion
-
-    Parameter(s):
-    num : number of random lengths to generate
-    L_min : minimum characteristic length to consider (m)
-    L_max : maximum characteristic length to consider (m)
-    typ : one of 'coll' (collision) or 'expl' (explosion)
-
-    Keyword Parameter(s): None
-
-    Output(s):
-    L : array of random characteristic lengths (m)
-
-    Note(s): returns 0 on an invalid type
-    '''
-
-    lam_min, lam_max = np.log10(L_min), np.log10(L_max)
-    if typ == 'coll' : beta = -1.71
-    elif typ == 'expl' : beta = -1.6
-    else:
-        print('WARNING: Invalid Debris Generation Type')
-        return 0
-    P = np.random.uniform(size=num) # get random P values
-    lam = np.log10(10**(beta*lam_min) - P*(10**(beta*lam_min) - 10**(beta*lam_max)))/beta
-    return 10**lam
 
 def X_cdf(x, x_min, x_max, L, typ):
     '''
@@ -396,6 +370,98 @@ def _X_cdf_11(x, x_min, x_max, L, typ):
     fac_two = erf((x_2d-mu2)/(np.sqrt(2)*sigma2)) - erf((x_min-mu2)/(np.sqrt(2)*sigma2))
     return np.swapaxes(C*(alpha*fac_one + (1-alpha)*fac_two),0,1)
 
+def v_cdf(v, x, typ):
+    '''
+    evaluates cdf for log10(Delta v) values at given vs and xs
+
+    Parameter(s):
+    v : log10(delta v) value to evaluate at (array, log10(m/s))
+    x : log10(A/M) value of the debris (array, log10(m^2/kg))
+    typ : one of 'coll' (collision) or 'expl' (explosion)
+
+    Keyword Parameter(s): None
+
+    Output(s):
+    P : value of the CDF at xs, vs (first dim x, second v)
+
+    Note(s): returns 0 on an invalid type
+    '''
+    
+    if typ == 'coll' : mu = 0.9*x + 2.9 # calculate normal distribution parameters
+    elif typ == 'expl' : mu = 0.2*x + 1.85
+    else:
+        print('WARNING: Invalid Debris Generation Type')
+        return 0
+    sigma_fac = 0.4*np.sqrt(2)
+    C = 1/2 # calculate normalization factor
+    v_2d = np.resize(v, (len(x), len(v))) # 2d array of v
+    v_2d = v_2d.transpose() # needed for proper broadcasting
+    # calculate CDF value
+    return np.swapaxes(C*(erf((v_2d-mu)/sigma_fac) + 1),0,1)
+
+def vprime_cdf(V, v0, theta, phi, x, typ):
+    '''
+    evaluates cdf for the post-collision speed V, given a pre-collision
+    orbital speed v0, post-collision directions of (theta, phi), and xs
+
+    Parameter(s):
+    V : post-collison speed to evaluate at (m/s)
+    v0 : pre-collision orbital speed (m/s)
+    theta : inclination angle (array, rad)
+    phi : azimuthal angle (array, rad)
+    x : log10(A/M) value of the debris (array, log10(m^2/kg))
+    typ : one of 'coll' (collision) or 'expl' (explosion)
+
+    Keyword Parameter(s): None
+
+    Output(s):
+    P : value of the CDF at V (first dim x, second direction)
+
+    Note(s): returns 0 on an invalid type
+    '''
+    result = np.zeros((len(x), len(theta)), dtype=np.double)
+    descriminate = (v0*np.sin(theta)*np.cos(phi))**2 - (v0**2-V**2)
+    # descriminate < 0 means a probability of zero
+    del_v_max = -v0*np.sin(theta)*np.cos(phi) + np.sqrt(descriminate)
+    del_v_min = -v0*np.sin(theta)*np.cos(phi) - np.sqrt(descriminate)
+    # del_v_max < 0 is also not possible
+    possible = (np.isnan(del_v_max) == False) & (del_v_max >=0)
+    del_v_min_low = possible & (del_v_min <= 0)
+    del_v_min_high = possible & (del_v_min_low == False)
+    result[:, del_v_min_low] = v_cdf(np.log10(del_v_max[del_v_min_low]), x, typ)
+    result[:, del_v_min_high] = v_cdf(np.log10(del_v_max[del_v_min_high]), x, typ) - v_cdf(np.log10(del_v_min[del_v_min_high]), x, typ)
+    return result
+
+# ALL FUNCTIONS PAST THIS POINT ARE NO LONGER USED, AND MAY OR MAY NOT BE FUNCTIONAL
+
+def randL(num, L_min, L_max, typ):
+    '''
+    generates num random characteristic lengths for debris from a collision/explosion
+
+    Parameter(s):
+    num : number of random lengths to generate
+    L_min : minimum characteristic length to consider (m)
+    L_max : maximum characteristic length to consider (m)
+    typ : one of 'coll' (collision) or 'expl' (explosion)
+
+    Keyword Parameter(s): None
+
+    Output(s):
+    L : array of random characteristic lengths (m)
+
+    Note(s): returns 0 on an invalid type
+    '''
+
+    lam_min, lam_max = np.log10(L_min), np.log10(L_max)
+    if typ == 'coll' : beta = -1.71
+    elif typ == 'expl' : beta = -1.6
+    else:
+        print('WARNING: Invalid Debris Generation Type')
+        return 0
+    P = np.random.uniform(size=num) # get random P values
+    lam = np.log10(10**(beta*lam_min) - P*(10**(beta*lam_min) - 10**(beta*lam_max)))/beta
+    return 10**lam
+
 def randX(num, x_min, x_max, L, typ):
     '''
     generates num random log10(A/M) values for debris from a collision/explosion
@@ -561,70 +627,6 @@ def _randX_11(num, x_min, x_max, L, typ):
         index = np.abs(P_table - P[i]).argmin() # find location of closest value on the table
         x[i] = x_table[index] # use this to find the corresponding x-value
     return x
-
-def v_cdf(v, x, typ):
-    '''
-    evaluates cdf for log10(Delta v) values at given vs and xs
-
-    Parameter(s):
-    v : log10(delta v) value to evaluate at (array, log10(m/s))
-    x : log10(A/M) value of the debris (array, log10(m^2/kg))
-    typ : one of 'coll' (collision) or 'expl' (explosion)
-
-    Keyword Parameter(s): None
-
-    Output(s):
-    P : value of the CDF at xs, vs (first dim x, second v)
-
-    Note(s): returns 0 on an invalid type
-    '''
-    
-    if typ == 'coll' : mu = 0.9*x + 2.9 # calculate normal distribution parameters
-    elif typ == 'expl' : mu = 0.2*x + 1.85
-    else:
-        print('WARNING: Invalid Debris Generation Type')
-        return 0
-    sigma_fac = 0.4*np.sqrt(2)
-    C = 1/2 # calculate normalization factor
-    v_2d = np.resize(v, (len(x), len(v))) # 2d array of v
-    v_2d = v_2d.transpose() # needed for proper broadcasting
-    # calculate CDF value
-    return np.swapaxes(C*(erf((v_2d-mu)/sigma_fac) + 1),0,1)
-
-def vprime_cdf(V, v0, theta, phi, x, typ):
-    '''
-    evaluates cdf for the post-collision speed V, given a pre-collision
-    orbital speed v0, post-collision direction of (theta, phi), and x
-
-    evaluates cdf for log10(Delta v) values at given vs and xs
-
-    Parameter(s):
-    V : post-collison speed to evaluate at (m/s)
-    v0 : pre-collision orbital speed (m/s)
-    theta : inclination angle (array, rad)
-    phi : azimuthal angle (array, rad)
-    x : log10(A/M) value of the debris (array, log10(m^2/kg))
-    typ : one of 'coll' (collision) or 'expl' (explosion)
-
-    Keyword Parameter(s): None
-
-    Output(s):
-    P : value of the CDF at V (first dim x, second direction)
-
-    Note(s): returns 0 on an invalid type
-    '''
-    result = np.zeros((len(x), len(theta)), dtype=np.double)
-    descriminate = (v0*np.sin(theta)*np.cos(phi))**2 - (v0**2-V**2)
-    # descriminate < 0 means a probability of zero
-    del_v_max = -v0*np.sin(theta)*np.cos(phi) + np.sqrt(descriminate)
-    del_v_min = -v0*np.sin(theta)*np.cos(phi) - np.sqrt(descriminate)
-    # del_v_max < 0 is also not possible
-    possible = (np.isnan(del_v_max) == False) & (del_v_max >=0)
-    del_v_min_low = possible & (del_v_min <= 0)
-    del_v_min_high = possible & (del_v_min_low == False)
-    result[:, del_v_min_low] = v_cdf(np.log10(del_v_max[del_v_min_low]), x, typ)
-    result[:, del_v_min_high] = v_cdf(np.log10(del_v_max[del_v_min_high]), x, typ) - v_cdf(np.log10(del_v_min[del_v_min_high]), x, typ)
-    return result
 
 def randv(num, x, typ):
     '''
