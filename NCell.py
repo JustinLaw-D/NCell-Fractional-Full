@@ -318,7 +318,7 @@ class NCell:
                     AM_rb[j] = 1/(20*2.2)
 
                 # compute atmospheric drag lifetime for rocket bodies in the shell
-                tau = drag_lifetime(self.alts[i] + self.dhs[i]/2, self.alts[i] - self.dhs[i]/2, AM_sat[j], CD, 1/365.25, m0,
+                tau = drag_lifetime(self.alts[i] + self.dhs[i]/2, self.alts[i] - self.dhs[i]/2, AM_rb[j], CD, 1/365.25, m0,
                                     min_dt, max_dt, dtfactor, t_max, setF107)
                 R_cell[j] = R_i[i][j]
                 lam_rb_cell[j] = lam_rb[i][j]
@@ -351,7 +351,7 @@ class NCell:
             # figure out which events are in this cell
             events_loc = []
             for event in events:
-                if (event.alt > self.alts[i] - self.dh[i]/2) and (event.alt <= self.alts[i] + self.dh[i]/2) : events_loc.append(event)
+                if (event.alt > self.alts[i] - self.dhs[i]/2) and (event.alt <= self.alts[i] + self.dhs[i]/2) : events_loc.append(event)
 
             # initialize cell
             cell = Cell(S_cell, S_d_cell, D_cell, R_cell, N_initial, self.logL_edges, self.chi_edges, events_loc,
@@ -486,7 +486,7 @@ class NCell:
             write_maxdt = -1
         else:
             write_maxdt = self.max_dt
-        if self.dt_max == np.inf:
+        if self.t_max == np.inf:
             write_tmax = -1
         else:
             write_tmax = self.dt_max
@@ -570,7 +570,6 @@ class NCell:
         atmos.logL_edges = array_dict['logL']
         atmos.chi_edges = array_dict['chi']
         atmos.lam_sat = array_dict['lam_sat']
-        atmos.num_cells = len(atmos.alts) - 1
         atmos.num_sat_types = len(atmos.lam_sat)
 
         # compute related parameters
@@ -662,7 +661,7 @@ class NCell:
             self.sim_expl(dNdt, NS_expl, curr_cell.C_sat, i, 'sat') # sat explosions
             self.sim_colls(dNdt, R_coll[i,:,:], curr_cell.m_rb, curr_cell.m_rb, i, 'rb') # rb-rb
             self.sim_colls(dNdt, NR_coll[i,:,:,:], curr_cell.m_rb, self.bin_masses, i, 'rb') # rb-debris
-            self.sim_expl(dNdt, NR_expl, curr_cell.C_sat, i, 'rb') # rb explosions
+            self.sim_expl(dNdt, NR_expl, curr_cell.C_rb, i, 'rb') # rb explosions
                     
             # add on debris lost to collisions
             if self.num_sat_types != 0:
@@ -723,8 +722,8 @@ class NCell:
             self.time += 1
             self.sim_events() # run discrete events
 
-    def run_sim_precor(self, T, dt_i=1, dt_min=0, dt_max=1, tolerance=1, err_factor=1e-6, upper=True):
-        ''' TODO
+    def run_sim_precor(self, T, dt_i=1, dt_min=1/1000, dt_max=1, tolerance=1, err_factor=1e-6, upper=True):
+        '''
         simulates the evolution of the debris-satallite system for T years using predictor-corrector model
 
         Parameter(s):
@@ -732,7 +731,7 @@ class NCell:
 
         Keyword Parameter(s):
         dt_i : initial timestep used by the simulation (yr, default 1)
-        dt_min : minimum time step used by the simulation is (yr, default 0)
+        dt_min : minimum time step used by the simulation is (yr, default 1/1000)
         dt_max : maximum time step used by simulation (yr, default 1)
         tolerance : tolerance for adaptive time step
         err_factor : how close to tolerance epsilon can be without actually triggering a redo
@@ -884,7 +883,7 @@ class NCell:
         if typ == 'sat':
             dNdt += self.sat_coll_probability_tables[indx,:,:,:]*N_debris
         elif typ == 'rb':
-            dNdt += self.sat_coll_probability_tables[indx,:,:,:]*N_debris
+            dNdt += self.rb_coll_probability_tables[indx,:,:,:]*N_debris
 
     def sim_colls_satrb(self, dNdt, rate, m, indx, typ):
         '''
@@ -913,7 +912,7 @@ class NCell:
         elif typ == 'rb':
             # total rate of debris creation, we sum over num_sat_types to get debris produced for each type of collision
             N_debris = np.sum(calc_Ntot(m, Lmin, Lmax, 'coll')*np.sum(rate,axis=0))
-            dNdt += self.sat_coll_probability_tables[indx,:,:,:]*N_debris
+            dNdt += self.rb_coll_probability_tables[indx,:,:,:]*N_debris
 
     def sim_expl(self, dNdt, rate, C, indx, typ):
         '''

@@ -1,7 +1,6 @@
 # contains class for a single atmospheric layer (Cell), satallites (functions more as a struct), and
 # discrete events (Event)
 
-from re import L
 import numpy as np
 from BreakupModel import *
 from Events import *
@@ -185,7 +184,7 @@ class Cell:
         for i in range(self.num_rb_types):
             rb_path = filepath + 'RocketBody' + str(i) + '/'
             os.mkdir(rb_path)
-            self.save_rb(rb_path, filter)
+            self.save_rb(rb_path, filter, filter_len, i)
 
     def save_sat(self, filepath, filter, filter_len, i):
         '''
@@ -204,8 +203,8 @@ class Cell:
         csv_file = open(filepath + 'params.csv', 'w', newline='')
         csv_writer = csv.writer(csv_file, dialect='unix')
         csv_writer.writerow([self.m_sat[i], self.sigma_sat[i], self.del_t[i], self.fail_t[i], self.tau_do[i], 
-                             self.target_alt[i], self.up_time[i], self.alphaS[i], self.alphaD[i], self.alphaN[i], 
-                             self.alphaR[i], self.P[i], self.AM_sat[i], self.tau_sat[i], self.C_sat[i], 
+                             self.target_alt[i], self.up_time[i], self.alpha_S[i], self.alpha_D[i], self.alpha_N[i], 
+                             self.alpha_R[i], self.P[i], self.AM_sat[i], self.tau_sat[i], self.C_sat[i], 
                              self.expl_rate_L[i], self.expl_rate_D[i]])
         csv_file.close()
 
@@ -397,8 +396,8 @@ class Cell:
         for row in csv_reader: # there's only one row, but this extracts it
             self.m_sat[i], self.sigma_sat[i], self.del_t[i] = float(row[0]), float(row[1]), float(row[2])
             self.tau_do[i], self.target_alt[i], self.up_time[i] = float(row[3]), float(row[4]), float(row[5])
-            self.alphaS[i], self.alphaD[i], self.alphaN[i] = float(row[6]), float(row[7]), float(row[8])
-            self.alphaR[i], self.P[i], self.AM_sat[i] = float(row[9]), float(row[10]), float(row[11])
+            self.alpha_S[i], self.alpha_D[i], self.alpha_N[i] = float(row[6]), float(row[7]), float(row[8])
+            self.alpha_R[i], self.P[i], self.AM_sat[i] = float(row[9]), float(row[10]), float(row[11])
             self.tau_sat[i], self.C_sat[i], self.expl_rate_L[i] = float(row[12]), float(row[13]), float(row[14])
             self.expl_rate_D[i] = float(row[15])
         csv_file.close()

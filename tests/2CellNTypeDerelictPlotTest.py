@@ -23,7 +23,7 @@ ax1.plot(t, D01, label='D01')
 ax1.plot(t, D11, label='D11')
 ax1.plot(t, D02, label='D02')
 ax1.plot(t, D12, label='D12')
-ax1.set_ylim(1, 200)
+ax1.set_ylim(1e-2, 200)
 ax1.set_xlim(0,T)
 ax1.legend()
 
