@@ -16,12 +16,12 @@ Me = 5.97219e24 # mass of Earth (kg)
 
 class NCell:
 
-    def __init__(self, S, S_d, D, N_l, target_alts, alt_edges, lam, update_period=1/12, min_lifetime=0, CD=2.2, m0=0, min_dt=0, 
-                max_dt=0.1, dtfactor=1/100, t_max=np.inf, setF107=None, events=[], R_i=None, lam_rb=None, up_time=None, 
-                del_t=None, fail_t=None, expl_rate_L=None, expl_rate_D=None, C_sat=None, sigma_sat=None, expl_rate_R=None, 
-                C_rb=None, sigma_rb=None, v=None, delta=None, alphaS=None, alphaD=None, alphaN=None, alphaR=None, P=None, 
-                m_s=None, m_rb=None, AM_sat=None, AM_rb=None, tau_do=None, L_min=1e-3, L_max=1, num_L=10, chi_min=-2, chi_max=1.0, 
-                num_chi=10, num_dir=1000, table_path=None):
+    def __init__(self, S, S_d, D, N_c, target_alts, alt_edges, lam, update_period=1/12, min_lifetime=0, CD=2.2, m0=0, min_dt=0, 
+                 max_dt=0.1, dtfactor=1/100, t_max=np.inf, setF107=None, events=[], R_i=None, lam_rb=None, up_time=None, 
+                 del_t=None, fail_t=None, expl_rate_L=None, expl_rate_D=None, C_sat=None, sigma_sat=None, expl_rate_R=None, 
+                 C_rb=None, sigma_rb=None, v=None, delta=None, alphaS=None, alphaD=None, alphaN=None, alphaR=None, P=None, 
+                 m_s=None, m_rb=None, AM_sat=None, AM_rb=None, tau_do=None, L_min=1e-3, L_max=1, num_L=10, chi_min=-2, chi_max=1.0, 
+                 num_chi=10, num_dir=1000, table_path=None):
         '''
         Constructor for NCell class
     
@@ -29,7 +29,7 @@ class NCell:
         S : list of initial number of live satellites in each shell of each type (list of arrays)
         S_d : list of initial number of deorbiting satellites in each shell of each type (list of arrays)
         D : list of initial number of derelict satellites in each shell of each type (list of arrays)
-        N_l : initial number of catestrophically lethal debris in each shell (array)
+        N_c : initial number of catestrophically lethal debris in each shell (array)
         target_alts : list of target altitude of each satellite type (array, km)
         alt_edges : edges of the altitude bands to be used (array, km)
         lam : launch rate of satellites of each type (array, 1/yr)
@@ -53,7 +53,7 @@ class NCell:
         expl_rate_L : number of explosions that occur in a 1yr period with a population of 100 live satellites for
                       each type of satellite (list of floats, default all 0)
         expl_rate_D : number of explosions that occur in a 1yr period with a population of 100 derelict satellites
-                      for each type of satellite (list of floats, default all 0)
+                      for each type of satellite (list of floats, default expl_rate_L)
         C_sat : fit constant for explosions of each type of satellite (list of floats, default all 1)
         sigma_sat : satellite cross-section of each type (list, m^2, default 10m^2)
         expl_rate_R : number of explosions that occur in a 1yr period with a population of 100 rocket bodies for
@@ -69,33 +69,33 @@ class NCell:
         alphaN : fraction of collisions with trackable debris that a live satellites of each type fails to 
                  avoid in each shell (list of lists, default 0.2)
         alphaR : fraction of collisions with a rocket body that a live satellites of each type fails to 
-                 avoid in each shell (list of lists, default alphaN)
+                 avoid in each shell (list of lists, default alphaD)
         P : post-mission disposal probability for satellites of each type (list, default 0.95)
         m_s : mass of the satallites of each type (list, kg, default 250kg)
         m_rb : mass of the rocket bodies of each type (list, kg, default 250kg)
         AM_sat : area-to-mass ratio of the satallites of each type (list, m^2/kg, default 1/(20*2.2)m^2/kg)
         AM_rb : area-to-mass ratio of the rocket bodies of each type (list, m^2/kg, default 1/(20*2.2)m^2/kg)
-        tau_do : average deorbiting time for satellites of each type in each shell (list of lists, yr, default decay_time/10)
+        tau_do : average deorbiting time for satellites of each type in each shell (list of lists, yr, default initial_decay_time/10)
         L_min : minimum characteristic length to consider (m, default 1mm)
         L_max : maximum characteristic length to consider (m, default 1m)
         num_L : number of debris bins in characteristic length (default 10)
-        chi_min : minimum log10(A/M) to consider (log10(m^2/kg), default -3)
-        chi_max : maximum log10(A/M) to consider (log10(m^2/kg), default 3)
+        chi_min : minimum log10(A/M) to consider (log10(m^2/kg), default -2)
+        chi_max : maximum log10(A/M) to consider (log10(m^2/kg), default 1)
         num_chi : number of debris bins in log10(A/M) (default 10)
         num_dir : number of random directions to sample in creating probability tables (default 1000)
-        table_path : path to save probability tables (string or None, must be saved in format used in NCell.save)
+        table_path : path to saved probability tables (string or None, must be saved in format used in NCell.save)
 
         Output(s):
         NCell instance
 
-        Note: no size checks are done on the arrays, the program will crash if any of the arrays differ in size.
+        Note: no size checks are done on the arrays, the program will crash if any of the arrays are of incorrect size.
         shells are assumed to be given in order of ascending altitude. if you only want to pass values in the
-        keyword argument for certain shells, put None in the list for all other shells. internally, cells have
+        keyword argument for certain shells, put None in the list for all other shells. internally, cells may have
         padded space in their arrays, use the getter functions to clean those up.
         '''
 
         if len(S) == 0: # check if there's no shells
-            print("ERROR: System must have at least on shell!")
+            print("ERROR: System must have at least one shell!")
             return
         self.num_cells = len(S) # total number of cells in the system
 
@@ -139,7 +139,7 @@ class NCell:
         self.setF107 = setF107
         self.alts = np.zeros(len(alt_edges)-1) # setup altitude bins
         self.dhs = np.zeros(self.alts.shape)
-        for i in range(len(alt_edges)-1):
+        for i in range(self.alts.size):
             self.dhs[i] = alt_edges[i+1]-alt_edges[i]
             self.alts[i] = (alt_edges[i]+alt_edges[i+1])/2
         self.num_L = num_L
@@ -257,7 +257,7 @@ class NCell:
                 if alphaD[i][j] is None:
                     alphaD[i][j] = alphaN[i][j]
                 if alphaR[i][j] is None:
-                    alphaR[i][j] = alphaN[i][j]
+                    alphaR[i][j] = alphaD[i][j]
                 if P[j] is None:
                     P[j] = 0.95
                 if m_s[j] is None:
@@ -335,14 +335,14 @@ class NCell:
             for j in range(self.num_L):
                 bin_L = 0
                 bin_bot_L, bin_top_L = self.logL_edges[j], self.logL_edges[j+1]
-                if (10**bin_bot_L < -1) and (bin_top_L > -1):
+                if (bin_bot_L < -1) and (bin_top_L > -1):
                     lam_factor = (-1-bin_bot_L)/(bin_top_L-bin_bot_L)
-                    bin_L += lam_factor*N_l[i]*delta[i]*(L_cdf(1e-1, L_min, 1e-1, 'expl') - L_cdf(10**bin_bot_L, L_min, 1e-1, 'expl'))
-                    bin_L += (1-lam_factor)*N_l[i]*(L_cdf(10**bin_top_L, 1e-1, L_max, 'expl') - L_cdf(10**bin_bot_L, 1e-1, L_max, 'expl'))
+                    bin_L += lam_factor*N_c[i]*delta[i]*(L_cdf(1e-1, L_min, 1e-1, 'expl') - L_cdf(10**bin_bot_L, L_min, 1e-1, 'expl'))
+                    bin_L += (1-lam_factor)*N_c[i]*(L_cdf(10**bin_top_L, 1e-1, L_max, 'expl') - L_cdf(1e-1, 1e-1, L_max, 'expl'))
                 elif bin_bot_L >= -1:
-                    bin_L += N_l[i]*(L_cdf(10**bin_top_L, 1e-1, L_max, 'expl') - L_cdf(10**bin_bot_L, 1e-1, L_max, 'expl'))
+                    bin_L += N_c[i]*(L_cdf(10**bin_top_L, 1e-1, L_max, 'expl') - L_cdf(10**bin_bot_L, 1e-1, L_max, 'expl'))
                 else:
-                    bin_L += N_l[i]*delta[i]*(L_cdf(10**bin_top_L, L_min, 1e-1, 'expl') - L_cdf(10**bin_bot_L, L_min, 1e-1, 'expl'))
+                    bin_L += N_c[i]*delta[i]*(L_cdf(10**bin_top_L, L_min, 1e-1, 'expl') - L_cdf(10**bin_bot_L, L_min, 1e-1, 'expl'))
                 N_initial[j,0] = bin_L # put everything in the lowest A/M bin
             for j in range(self.num_chi):
                 tau_N[j] = drag_lifetime(self.alts[i] + self.dhs[i]/2, self.alts[i] - self.dhs[i]/2, self.AM_ave[j], CD, 1/365.25, 
@@ -377,9 +377,7 @@ class NCell:
             self.rb_coll_probability_tables = np.zeros((self.num_cells, self.num_cells, self.num_L, self.num_chi))
             self.sat_expl_probability_tables = np.zeros((self.num_cells, self.num_cells, self.num_L, self.num_chi))
             self.rb_expl_probability_tables = np.zeros((self.num_cells, self.num_cells, self.num_L, self.num_chi))
-            # compute probability tables
-            for i in range(self.num_cells):
-                self.fill_prob_tables(phi, theta)
+            self.fill_prob_tables(phi, theta) # compute probability tables
         else: # load tables
             prob_dict = np.load(table_path)
             self.sat_coll_probability_tables = prob_dict['sat_coll_tables']
@@ -392,8 +390,8 @@ class NCell:
         calculates probability tables
 
         Input(s):
-        phi : list of phi components of directions
-        theta : list of theta components of directions
+        phi : array of phi components of directions
+        theta : array of theta components of directions
 
         Keyword Input(s): None
 
@@ -459,7 +457,7 @@ class NCell:
 
         Output(s): None
 
-        Note(s): drag_lifetime and events are lost. adherence to the "gap" value is approximate, and may behave
+        Note(s): events are lost. adherence to the "gap" value is approximate, and may behave
         strangely if the time step is close to the gap size.
         '''
 
@@ -614,15 +612,15 @@ class NCell:
         Keyword Parameter(s): None
 
         Output(s):
-        dSdt : list of rates of change in S for each cell (1/yr)
-        dS_ddt : list of rates of change in S_d for each cell (1/yr)
-        dDdt : list of rates of change in D for each cell (1/yr)
-        dRdt : list of rates of change in R for each cell (1/yr)
-        dNdt : list of rates of change in the N matrix for each cell (1/yr)
-        dCcdt : list of rates of change in C_c for each cell (1/yr)
-        dCcldt : list of rates of change in C_nc for each cell (1/yr)
+        dSdt : list of rates of change in S for each cell (2-d array, 1/yr)
+        dS_ddt : list of rates of change in S_d for each cell (2-d array, 1/yr)
+        dDdt : list of rates of change in D for each cell (2-d array, 1/yr)
+        dRdt : list of rates of change in R for each cell (2-d array, 1/yr)
+        dNdt : list of rates of change in the N matrix for each cell (3-d array, 1/yr)
+        dCcdt : list of rates of change in C_c for each cell (array, 1/yr)
+        dCcldt : list of rates of change in C_nc for each cell (array1/yr)
 
-        Note : does not check that the time input is valid
+        Note : does not check that the time input is valid. arrays are indexed in order (cell, type)
         '''
 
         top_cell = self.cells[-1]
@@ -663,19 +661,18 @@ class NCell:
             self.sim_colls(dNdt, NR_coll[i,:,:,:], curr_cell.m_rb, self.bin_masses, i, 'rb') # rb-debris
             self.sim_expl(dNdt, NR_expl, curr_cell.C_rb, i, 'rb') # rb explosions
                     
-            # add on debris lost to collisions
-            if self.num_sat_types != 0:
-                dNdt[i,:,:] -= np.sum(NS_coll[i,:,:,:], axis=0)
-            if self.num_rb_types != 0:
-                dNdt[i,:,:] -= np.sum(NR_coll[i,:,:,:], axis=0)
+        # add on debris lost to collisions
+        if self.num_sat_types != 0:
+            dNdt -= np.sum(NS_coll, axis=1)
+        if self.num_rb_types != 0:
+            dNdt -= np.sum(NR_coll, axis=1)
 
         # go through cells from bottom to top to correct values
-        for i in range(self.num_cells):
-            dSdt[i] += S_in[i,:] - S_in[i+1,:]
-            dS_ddt[i] += S_din[i+1,:] - S_din[i,:]
-            dDdt[i] += D_in[i+1,:] - D_in[i,:]
-            dRdt[i] += R_in[i+1,:] - R_in[i,:]
-            dNdt[i] += N_in[i+1,:] - N_in[i,:]
+        dSdt += S_in[:self.num_cells,:] - S_in[1:,:]
+        dS_ddt += S_din[1:,:] - S_din[:self.num_cells,:]
+        dDdt += D_in[1:,:] - D_in[:self.num_cells,:]
+        dRdt += R_in[1:,:] - R_in[:self.num_cells,:]
+        dNdt += N_in[1:,:,:] - N_in[:self.num_cells,:,:]
 
         # update values
         dCcdt = np.sum(sat_coll, axis=(1,2)) + np.sum(RS_coll, axis=(1,2)) + np.sum(R_coll, axis=(1,2))
@@ -752,7 +749,7 @@ class NCell:
         self.update_lifetimes(self.t[self.time])
         self.lupdate_time = self.time
         dSdt_n1, dSddt_n1, dDdt_n1, dRdt_n1, dNdt_n1, dCcdt_n1, dCncdt_n1 = self.dxdt(self.time, upper=upper)
-        dt_old = dt_min # set up old time step variable
+        dt_old = self.t[self.time] - self.t[self.time-1] # set up old time step variable
         dt = dt_i
         updated, redo = False, False
 
@@ -866,15 +863,15 @@ class NCell:
         
         Parameter(s):
         dNdt : current dNdt values (3-d array, 1/yr)
-        rate : rate of collisions to simulate (2-d array, 1/yr)
+        rate : rate of collisions to simulate (2-d or 3-d array, 1/yr)
         m_1 : mass of the first object (array, kg)
-        m_2 : mass of the second object (array or 2-d array, kg)
+        m_2 : mass of the second object (1-d or 2-d array, kg)
         indx : index of the cell the collision occurs in
         typ : object type of the objects, either 'sat' (satellite) or 'rb' (rocket body)
 
         Keyword Parameter(s): None
 
-        Output(s): None
+        Output(s): if rate is 2-d, m_2 must be 1-d. if rate is 3-d, m_2 must be 2-d
         '''
         v_rel = self.cells[indx].v # collision velocity (km/s)
         M = calc_M(m_1, m_2, v_rel) # M factor
@@ -920,7 +917,7 @@ class NCell:
         the index'th cell
         
         Parameter(s):
-        dNdt : current dNdt values (list of matrices, 1/yr)
+        dNdt : current dNdt values (3-d matrix, 1/yr)
         rate : rate of explosions to simulate (array, 1/yr)
         C : fit constant for the explosion (can be array)
         indx : index of the cell the collision occurs in
@@ -965,7 +962,7 @@ class NCell:
             for event in curr_cell.event_list: # iterate through possible events
 
                 if event.time is not None: # events at specific times
-                    while event.time != [] and event.time[0] <= self.t[self.time]:
+                    while event.time != [] and (event.time[0] <= self.t[self.time]):
                         dS_temp, dS_d_temp, dD_temp, dR_temp, dN_loc_temp, coll_temp, expl_temp = event.run_event(S, S_d, D, R, N, self.logL_edges, self.chi_edges)
                         event.time.pop(0)
                         dS += dS_temp
@@ -977,7 +974,7 @@ class NCell:
                         expl_list.extend(expl_temp)
 
                 if event.freq is not None: # events occuring at specific frequencies
-                    if self.t[self.time] - event.last_event <= event.freq:
+                    if self.t[self.time] - event.last_event <= 1/event.freq:
                         dS_temp, dS_d_temp, dD_temp, dR_temp, dN_loc_temp, coll_temp, expl_temp = event.run_event(S, S_d, D, R, N, self.logL_edges, self.chi_edges)
                         dS += dS_temp
                         dS_d += dS_d_temp
@@ -1017,7 +1014,7 @@ class NCell:
 
         for coll in coll_list: # iterate through list
             m1, m2, typ, num = coll # unpack the list
-            m1, m2, num = np.array(m1), np.array(m2), np.array(num) # needed for compatibility
+            m1, m2, num = np.array(m1), np.array(m2), np.reshape(np.array(num), (1,1)) # needed for compatibility
             if typ == 'sat' or typ == 'rb':
                 self.sim_colls(dN, num, m1, m2, i, typ)
             elif typ == 'sr':
@@ -1042,7 +1039,7 @@ class NCell:
 
     def update_lifetimes(self, t):
         '''
-        updates all drag lifetimes in the system, using drag_lifetime function
+        updates all drag lifetimes in the system
 
         Input(s):
         t : time to call drag_lifetime at (yr)
@@ -1097,7 +1094,7 @@ class NCell:
             to_return.append([])
             for j in range(cell.num_sat_types):
                 to_return[-1].append([])
-                for k in range(self.time+1):
+                for k in range(self.time):
                     to_return[-1][j].append(cell.S[k][j])
         return to_return
 
@@ -1118,7 +1115,7 @@ class NCell:
             to_return.append([])
             for j in range(cell.num_sat_types):
                 to_return[-1].append([])
-                for k in range(self.time+1):
+                for k in range(self.time):
                     to_return[-1][j].append(cell.S_d[k][j])
         return to_return
 
@@ -1139,7 +1136,7 @@ class NCell:
             to_return.append([])
             for j in range(cell.num_sat_types):
                 to_return[-1].append([])
-                for k in range(self.time+1):
+                for k in range(self.time):
                     to_return[-1][j].append(cell.D[k][j])
         return to_return
 
@@ -1160,7 +1157,7 @@ class NCell:
             to_return.append([])
             for j in range(cell.num_rb_types):
                 to_return[-1].append([])
-                for k in range(self.time+1):
+                for k in range(self.time):
                     to_return[-1][j].append(cell.R[k][j])
         return to_return
 

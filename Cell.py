@@ -28,12 +28,12 @@ class Cell:
         event_list : list of discrete events that occur in the cell
         alt : altitude of the shell centre (km)
         dh : width of the shell (km)
-        tau_N : array of atmospheric drag lifetimes for debris (yr)
+        tau_N : 2-d array of atmospheric drag lifetimes for debris (yr)
         v : relative collision speed (km/s)
         m_sat : mass of each satellite type (kg)
         sigma_sat : collision cross-section of each satellite type (m^2)
         del_t : mean satellite lifetime of each type (yr)
-        fail_t : ascending satellite failure lifetime (yr)
+        fail_t : ascending satellite failure lifetime for each type (yr)
         tau_do : mean time for satellites of each type to de-orbit from shell (yr)
         target_alt : target final altitude for each satellite type (km)
         up_time : amount of time it takes a satellite of each type to ascend through the band (yr)
@@ -107,7 +107,7 @@ class Cell:
         self.event_list = event_list
         self.alt = alt
         self.dh = dh
-        self.V = 4*np.pi*(6371 + self.alt)**2*self.dh # volume of the shell
+        self.V = 4*np.pi*((6371 + self.alt)**2)*self.dh # volume of the shell
         self.tau_N = tau_N
         self.v = v
         self.v_kyr = self.v*365.25*24*60*60 # convert to km/yr
@@ -124,16 +124,34 @@ class Cell:
         for i in range(self.num_chi):
             self.chi_ave[i] = (chi_edges[i]+chi_edges[i+1])/2
         self.AM_ave = 10**self.chi_ave
-        self.trackable = np.full(self.num_L, True) # which bins are trackable
-        for i in range(self.num_L):
-            ave_L = 10**((self.logL_edges[i] + self.logL_edges[i+1])/2) # average L value for these bins
-            if ave_L < 1/10 : self.trackable[i] = False
+        self.trackable = (self.L_ave >= 1/10) # which debris types can be tracked
         self.cat_sat_N = np.full((self.num_sat_types, self.num_L, self.num_chi), False) # tracks which collisions are catastrophic
         self.cat_rb_N = np.full((self.num_rb_types, self.num_L, self.num_chi), False)
         self.update_cat_N()
-        self.ascending = np.full(self.num_sat_types, False) # list of which satellite types are ascending
+        self.ascending = (self.target_alt > self.alt + self.dh/2) # list of which satellite types are ascending
+
+        # parameters for dxdt calculations
+        sigma1_2d = np.resize(self.sigma_sat_km, (self.num_sat_types, self.num_sat_types))
+        sigma2_2d = self.sigma1_2d_satsat.transpose()
+        self.sigma_comb_satsat = sigma1_2d + sigma2_2d + 2*np.sqrt(sigma1_2d*sigma2_2d) # account for increased cross-section
+        self.alphaS1 = np.resize(self.alpha_S, (self.num_sat_types, self.num_sat_types))
+        self.alphaS2 = self.alphaS1.transpose()
+        self.alphaD1 = np.resize(self.alpha_D, (self.num_sat_types, self.num_sat_types))
+        sigma1_2d = np.resize(self.sigma_sat_km, (self.num_rb_types, self.num_sat_types)).transpose()
+        sigma2_2d = np.resize(self.sigma_rb_km, (self.num_sat_types, self.num_rb_types))
+        self.sigma_comb_satrb = sigma1_2d + sigma2_2d + 2*np.sqrt(sigma1_2d*sigma2_2d) # account for increased cross-section
+        self.alphaR1 = np.resize(self.alpha_R, (self.num_rb_types, self.num_sat_types)).transpose()
+        sigma1_2d = np.resize(self.sigma_rb_km, (self.num_rb_types, self.num_rb_types))
+        sigma2_2d = sigma1_2d.transpose()
+        self.sigma_comb_rbrb = sigma1_2d + sigma2_2d + 2*np.sqrt(sigma1_2d*sigma2_2d) # account for increased cross-section
+        self.double_count_filter_sat = np.full((self.num_sat_types, self.num_sat_types), False)
+        self.double_count_filter_rb = np.full((self.num_rb_types, self.num_rb_types), False)
         for i in range(self.num_sat_types):
-            if self.target_alt[i] > self.alt + self.dh/2 : self.ascending[i] = True
+            for j in range(i+1,self.num_sat_types):
+                self.double_count_filter_sat[i,j] = True
+        for i in range(self.num_rb_types):
+            for j in range(i+1,self.num_rb_types):
+                self.double_count_filter_rb[i,j] = True
 
     def save(self, filepath, filter, filter_len):
         '''
@@ -154,7 +172,7 @@ class Cell:
         csv_file = open(filepath + 'params.csv', 'w', newline='')
         csv_writer = csv.writer(csv_file, dialect='unix')
         csv_writer.writerow([self.num_sat_types, self.num_rb_types, self.alt, self.dh, self.v, self.v_orbit, self.num_L,
-                              self.num_chi])
+                             self.num_chi])
         csv_file.close()
 
         # write easy arrays
@@ -305,7 +323,7 @@ class Cell:
             cell.chi_ave[i] = (cell.chi_edges[i]+cell.chi_edges[i+1])/2
         cell.AM_ave = 10**cell.chi_ave
         cell.v_kyr = cell.v*365.25*24*60*60 # convert to km/yr
-        cell.V = 4*np.pi*(6371 + cell.alt)**2*cell.dh # volume of the shell
+        cell.V = 4*np.pi*((6371 + cell.alt)**2)*cell.dh # volume of the shell
 
         # load N_bins values
         cell.N_bins = []
@@ -342,8 +360,8 @@ class Cell:
         cell.up_time = np.empty(cell.num_sat_types, dtype=np.double)
         cell.alpha_S = np.empty(cell.num_sat_types, dtype=np.double)
         cell.alpha_D = np.empty(cell.num_sat_types, dtype=np.double)
-        cell.alpha_R = np.empty(cell.num_sat_types, dtype=np.double)
         cell.alpha_N = np.empty(cell.num_sat_types, dtype=np.double)
+        cell.alpha_R = np.empty(cell.num_sat_types, dtype=np.double)
         cell.P = np.empty(cell.num_sat_types, dtype=np.double)
         cell.AM_sat = np.empty(cell.num_sat_types, dtype=np.double)
         cell.tau_sat = np.empty(cell.num_sat_types, dtype=np.double)
@@ -374,7 +392,34 @@ class Cell:
             rb_path = filepath + 'RocketBody' + str(i) + '/'
             cell.load_rb(rb_path, i)
 
+        # compute related parameters
+        cell.sigma_rb_km = cell.sigma_rb/1e6
+
         cell.event_list = []
+
+        # parameters for dxdt calculations
+        sigma1_2d = np.resize(cell.sigma_sat_km, (cell.num_sat_types, cell.num_sat_types))
+        sigma2_2d = cell.sigma1_2d_satsat.transpose()
+        cell.sigma_comb_satsat = sigma1_2d + sigma2_2d + 2*np.sqrt(sigma1_2d*sigma2_2d) # account for increased cross-section
+        cell.alphaS1 = np.resize(cell.alpha_S, (cell.num_sat_types, cell.num_sat_types))
+        cell.alphaS2 = cell.alphaS1.transpose()
+        cell.alphaD1 = np.resize(cell.alpha_D, (cell.num_sat_types, cell.num_sat_types))
+        sigma1_2d = np.resize(cell.sigma_sat_km, (cell.num_rb_types, cell.num_sat_types)).transpose()
+        sigma2_2d = np.resize(cell.sigma_rb_km, (cell.num_sat_types, cell.num_rb_types))
+        cell.sigma_comb_satrb = sigma1_2d + sigma2_2d + 2*np.sqrt(sigma1_2d*sigma2_2d) # account for increased cross-section
+        cell.alphaR1 = np.resize(cell.alpha_R, (cell.num_rb_types, cell.num_sat_types)).transpose()
+        sigma1_2d = np.resize(cell.sigma_rb_km, (cell.num_rb_types, cell.num_rb_types))
+        sigma2_2d = sigma1_2d.transpose()
+        cell.sigma_comb_rbrb = sigma1_2d + sigma2_2d + 2*np.sqrt(sigma1_2d*sigma2_2d) # account for increased cross-section
+        cell.double_count_filter_sat = np.full((cell.num_sat_types, cell.num_sat_types), False)
+        cell.double_count_filter_rb = np.full((cell.num_rb_types, cell.num_rb_types), False)
+        for i in range(cell.num_sat_types):
+            for j in range(i+1,cell.num_sat_types):
+                cell.double_count_filter_sat[i,j] = True
+        for i in range(cell.num_rb_types):
+            for j in range(i+1,cell.num_rb_types):
+                cell.double_count_filter_rb[i,j] = True
+
         return cell
 
     def load_sat(self, filepath, i):
@@ -395,11 +440,11 @@ class Cell:
         csv_reader = csv.reader(csv_file, dialect='unix')
         for row in csv_reader: # there's only one row, but this extracts it
             self.m_sat[i], self.sigma_sat[i], self.del_t[i] = float(row[0]), float(row[1]), float(row[2])
-            self.tau_do[i], self.target_alt[i], self.up_time[i] = float(row[3]), float(row[4]), float(row[5])
-            self.alpha_S[i], self.alpha_D[i], self.alpha_N[i] = float(row[6]), float(row[7]), float(row[8])
-            self.alpha_R[i], self.P[i], self.AM_sat[i] = float(row[9]), float(row[10]), float(row[11])
-            self.tau_sat[i], self.C_sat[i], self.expl_rate_L[i] = float(row[12]), float(row[13]), float(row[14])
-            self.expl_rate_D[i] = float(row[15])
+            self.fail_t[i], self.tau_do[i], self.target_alt[i] = float(row[3]), float(row[4]), float(row[5])
+            self.up_time[i], self.alpha_S[i], self.alpha_D[i] = float(row[6]), float(row[7]), float(row[8])
+            self.alpha_N[i], self.alpha_R[i], self.P[i] = float(row[9]), float(row[10]), float(row[11])
+            self.AM_sat[i], self.tau_sat[i], self.C_sat[i] = float(row[12]), float(row[13]), float(row[14])
+            self.expl_rate_L[i], self.expl_rate_D[i] = float(row[15]), float(row[16])
         csv_file.close()
 
         # load data
@@ -441,7 +486,7 @@ class Cell:
             self.R[j][i] = R_rb[j]
 
     def dxdt_cell(self, time):
-        ''' TODO move some array creation to __init__ and load
+        '''
         calculates the rate of collisions and decays from each debris bin, the rate
         of decaying/de-orbiting satellites, the rate of launches/deorbit starts of satallites, 
         and the rate of creation of derelicts at the given time, due only to events in the cell
@@ -497,12 +542,6 @@ class Cell:
         dDdt = np.swapaxes(dDdt,0,2) # switch axes back
 
         # handle satellite-satellite collisions
-        sigma1_2d = np.resize(self.sigma_sat_km, (self.num_sat_types, self.num_sat_types))
-        sigma2_2d = sigma1_2d.transpose()
-        sigma_comb = sigma1_2d + sigma2_2d + 2*np.sqrt(sigma1_2d*sigma2_2d) # account for increased cross-section
-        alphaS1 = np.resize(self.alpha_S, (self.num_sat_types, self.num_sat_types))
-        alphaS2 = alphaS1.transpose()
-        alphaD1 = np.resize(self.alpha_D, (self.num_sat_types, self.num_sat_types))
         S1 = np.resize(S_loc, (self.num_sat_types, self.num_sat_types))
         S2 = S1.transpose()
         S_d1 = np.resize(Sd_loc, (self.num_sat_types, self.num_sat_types))
@@ -511,27 +550,23 @@ class Cell:
         D2 = D1.transpose()
 
         # calculate collision rates
-        dSSdt = alphaS1*alphaS2*sigma_comb*self.v_kyr*S1*S2/self.V
-        dSS_ddt = alphaS1*alphaS2*sigma_comb*self.v*S1*S_d2/self.V
-        dSDdt = alphaD1*sigma_comb*self.v_kyr*S1*D2/self.V
-        dS_dS_ddt = alphaS1*alphaS2*sigma_comb*self.v_kyr*S_d1*S_d2/self.V
-        dS_dDdt = alphaD1*sigma_comb*self.v_kyr*S_d1*D2/self.V
-        dDDdt = sigma_comb*self.v_kyr*D1*D2/self.V  # collisions cannot be avoided
+        dSSdt = self.alphaS1*self.alphaS2*self.sigma_comb_satsat*self.v_kyr*S1*S2/self.V
+        dSS_ddt = self.alphaS1*self.alphaS2*self.sigma_comb_satsat*self.v*S1*S_d2/self.V
+        dSDdt = self.alphaD1*self.sigma_comb_satsat*self.v_kyr*S1*D2/self.V
+        dS_dS_ddt = self.alphaS1*self.alphaS2*self.sigma_comb_satsat*self.v_kyr*S_d1*S_d2/self.V
+        dS_dDdt = self.alphaD1*self.sigma_comb_satsat*self.v_kyr*S_d1*D2/self.V
+        dDDdt = self.sigma_comb_satsat*self.v_kyr*D1*D2/self.V  # collisions cannot be avoided
 
         # compute collisions between satellites and rocket bodies
-        sigma1_2d = np.resize(self.sigma_sat_km, (self.num_rb_types, self.num_sat_types)).transpose()
-        sigma2_2d = np.resize(self.sigma_rb_km, (self.num_sat_types, self.num_rb_types))
-        sigma_comb = sigma1_2d + sigma2_2d + 2*np.sqrt(sigma1_2d*sigma2_2d) # account for increased cross-section
-        alphaR1 = np.resize(self.alpha_R, (self.num_rb_types, self.num_sat_types)).transpose()
         S1 = np.resize(S_loc, (self.num_rb_types, self.num_sat_types)).transpose()
         S_d1 = np.resize(Sd_loc, (self.num_rb_types, self.num_sat_types)).transpose()
         D1 = np.resize(D_loc, (self.num_rb_types, self.num_sat_types)).transpose()
         R2 = np.resize(R_loc, (self.num_sat_types, self.num_rb_types))
 
         # calculate collision rates
-        dSRdt = alphaR1*sigma_comb*self.v_kyr*S1*R2/self.V
-        dS_dRdt = alphaR1*sigma_comb*self.v_kyr*S_d1*R2/self.V
-        dDRdt = sigma_comb*self.v_kyr*D1*R2/self.V # collisions cannot be avoided
+        dSRdt = self.alphaR1*self.sigma_comb_satrb*self.v_kyr*S1*R2/self.V
+        dS_dRdt = self.alphaR1*self.sigma_comb_satrb*self.v_kyr*S_d1*R2/self.V
+        dDRdt = self.sigma_comb_satrb*self.v_kyr*D1*R2/self.V # collisions cannot be avoided
 
         # compute explosion rates for satellites
         expl_S = self.expl_rate_L*S_loc/100
@@ -544,20 +579,10 @@ class Cell:
         ascend_S = np.zeros(self.num_sat_types)
         ascend_S[self.ascending] = S_loc[self.ascending]/self.up_time[self.ascending]
 
-        # sum everything up
-        double_count_filter_sat = np.full((self.num_sat_types, self.num_sat_types), False)
-        double_count_filter_rb = np.full((self.num_rb_types, self.num_rb_types), False)
-        for i in range(self.num_sat_types):
-            for j in range(i+1,self.num_sat_types):
-                double_count_filter_sat[i,j] = True
-        for i in range(self.num_rb_types):
-            for j in range(i+1,self.num_rb_types):
-                double_count_filter_rb[i,j] = True
-
         # diagonals are to account for objects of the same type colliding
         dSdt_tot = 0 - kill_S - np.sum(dSdt, axis=(1,2)) - np.sum(dSSdt, axis=1) - np.sum(dSS_ddt, axis=1) - np.sum(dSDdt, axis=1) - np.diag(dSSdt) - np.sum(dSRdt, axis=1) - expl_S
         dS_ddt_tot = self.P*kill_S - np.sum(dS_ddt, axis=(1,2)) - np.sum(dSS_ddt, axis=0) - np.sum(dS_dS_ddt, axis=1) - np.sum(dS_dDdt, axis=1) - np.diag(dS_dS_ddt) - np.sum(dS_dRdt, axis=1) - expl_Sd
-        dDdt_tot = (1-self.P)*kill_S - np.sum(dDdt, axis=(1,2), where=self.cat_sat_N) + np.sum(dSdt, axis=(1,2), where=self.cat_sat_N==False) + np.sum(dDdt, axis=(1,2), where=self.cat_sat_N==False) - np.sum(dSDdt, axis=1) - np.sum(dS_dDdt, axis=1) - np.sum(dDDdt, axis=0) - np.diag(dDDdt) - np.sum(dDRdt, axis=1) - expl_D
+        dDdt_tot = (1-self.P)*kill_S - np.sum(dDdt, axis=(1,2), where=self.cat_sat_N) + np.sum(dSdt, axis=(1,2), where=self.cat_sat_N==False) + np.sum(dS_ddt, axis=(1,2), where=self.cat_sat_N==False) - np.sum(dSDdt, axis=0) - np.sum(dS_dDdt, axis=0) - np.sum(dDDdt, axis=1) - np.diag(dDDdt) - np.sum(dDRdt, axis=1) - expl_D
         CS_dt = dSdt + dS_ddt + dDdt # total collisions between satellites and debris
 
         # handle rocket-debris collisions
@@ -567,14 +592,11 @@ class Cell:
         dRdt = np.swapaxes(dRdt,0,2) # switch axes back
 
         # handle rocket-rocket collisions
-        sigma1_2d = np.resize(self.sigma_rb_km, (self.num_rb_types, self.num_rb_types))
-        sigma2_2d = sigma1_2d.transpose()
-        sigma_comb = sigma1_2d + sigma2_2d + 2*np.sqrt(sigma1_2d*sigma2_2d) # account for increased cross-section
         R1 = np.resize(R_loc, (self.num_rb_types, self.num_rb_types))
         R2 = R1.transpose()
 
         # calculate collision rate
-        dRRdt = sigma_comb*self.v_kyr*R1*R2/self.V
+        dRRdt = self.sigma_comb_rbrb*self.v_kyr*R1*R2/self.V
 
         # handle rocket explosions, decays
         expl_R = self.expl_rate_R*R_loc/100
@@ -587,8 +609,8 @@ class Cell:
         decay_N = N_loc/self.tau_N
 
         # set values to zero to avoid double-counting later on
-        dSSdt[double_count_filter_sat], dS_dS_ddt[double_count_filter_sat], dDDdt[double_count_filter_sat] = 0, 0, 0
-        dRRdt[double_count_filter_rb] = 0
+        dSSdt[self.double_count_filter_sat], dS_dS_ddt[self.double_count_filter_sat], dDDdt[self.double_count_filter_sat] = 0, 0, 0
+        dRRdt[self.double_count_filter_rb] = 0
 
         # compute return values
         D_dt = dSSdt + dSS_ddt + dSDdt + dS_dS_ddt + dS_dDdt + dDDdt
