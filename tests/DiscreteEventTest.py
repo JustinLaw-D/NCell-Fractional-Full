@@ -24,7 +24,7 @@ D_i = [0]
 N_i = 2.5e-8*V
 lam = 2000
 T = 50
-events = [MyEvent(alt, time=[1,10])]#, ExplEvent(alt, [(1,'rb',10)], freq=1)]
+events = [MyEvent(alt, time=[10]), ExplEvent(alt, [(1,'rb',10)], freq=1)]
 atmosphere = NCell([S_i], [S_di], [D_i], [N_i], [alt], [587.5,612.5], [lam], tau_do=[[2]], events=events)
 atmosphere.run_sim_precor(T, dt_min=1/10000)
 atmosphere.save("./", "test_save_Discrete", gap=0.01)

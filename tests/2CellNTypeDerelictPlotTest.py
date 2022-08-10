@@ -10,6 +10,7 @@ T = t[-1]
 D00, D10 = atmosphere.get_D()[0][0], atmosphere.get_D()[1][0]
 D01, D11 = atmosphere.get_D()[0][1], atmosphere.get_D()[1][1]
 D02, D12 = atmosphere.get_D()[0][2], atmosphere.get_D()[1][2]
+N = atmosphere.get_N()
 
 import matplotlib.pyplot as plt
 
@@ -23,8 +24,10 @@ ax1.plot(t, D01, label='D01')
 ax1.plot(t, D11, label='D11')
 ax1.plot(t, D02, label='D02')
 ax1.plot(t, D12, label='D12')
-ax1.set_ylim(1e-2, 200)
-ax1.set_xlim(0,T)
+#ax1.plot(t, N[0], label='N0')
+#ax1.plot(t, N[1], label='N1')
+ax1.set_ylim(1, 1e3)
+ax1.set_xlim(0,20)
 ax1.legend()
 
 fig.tight_layout()  # otherwise the right y-label is slightly clipped

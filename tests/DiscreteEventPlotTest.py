@@ -24,7 +24,7 @@ ax1.plot(t, S, label='S')
 ax1.plot(t, S_d, label='S_d')
 ax1.plot(t, D, label='D')
 ax1.plot(t, N, label='N')
-ax1.set_ylim(100, 1e9)
+ax1.set_ylim(100, 1e10)
 ax1.set_xlim(0,T)
 ax1.legend()
 

@@ -24,7 +24,7 @@ ax1.plot(t, S11, label='S11')
 ax1.plot(t, S02, label='S02')
 ax1.plot(t, S12, label='S12')
 ax1.set_ylim(1, 1e3)
-ax1.set_xlim(0,T)
+ax1.set_xlim(0,10)
 ax1.legend()
 
 fig.tight_layout()  # otherwise the right y-label is slightly clipped
