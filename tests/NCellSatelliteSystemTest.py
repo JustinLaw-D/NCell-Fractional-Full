@@ -21,5 +21,5 @@ lam = [1000, 1000, 1000]
 T = 60
 atmosphere = NCell(S_i, S_di, D_i, N_i, [600, 750, 900],  alt_edges, lam)
 
-atmosphere.run_sim_precor(T, dt_min=1/1000, upper=True)
+atmosphere.run_sim_precor(T, dt_min=1/10000, upper=True)
 atmosphere.save("./", "test_save_NCellSystem", gap=0.1, force=True)
