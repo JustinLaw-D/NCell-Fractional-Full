@@ -82,7 +82,7 @@ expl_rate_D : number of explosions that occur in a 1yr period with a population 
 
 C_sat : fit constant for explosions of each type of satellite (list of floats)
 
-sigma_sat : satellite cross-section of each type (list, m^2, default 10m^2)
+sigma_sat : satellite cross-section of each type (list, m^2)
 
 alphaS : fraction of collisions with another live satellite that a live satellites of each type fails to 
          avoid in each shell (list of lists)
@@ -94,7 +94,7 @@ alphaN : fraction of collisions with trackable debris that a live satellites of 
          avoid in each shell (list of lists)
 
 alphaR : fraction of collisions with a rocket body that a live satellites of each type fails to 
-            avoid in each shell (list of lists)
+         avoid in each shell (list of lists)
 
 P : post-mission disposal probability for satellites of each type (list)
 
