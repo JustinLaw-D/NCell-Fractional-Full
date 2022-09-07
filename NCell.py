@@ -109,7 +109,7 @@ class NCell:
         if up_time is None:
             up_time = [None]*self.num_cells
         if v is None:
-            v = [10]*self.num_cells
+            v = [None]*self.num_cells
         if delta is None:
             delta = [10]*self.num_cells
         if alphaS is None:
